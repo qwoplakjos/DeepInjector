@@ -1,0 +1,33 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Glass Card Effect -->
+    <Style x:Key="GlassCard" TargetType="Border">
+        <Setter Property="Background" Value="#18FFFFFF"/>
+        <Setter Property="BorderBrush" Value="{StaticResource GlassBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="CornerRadius" Value="0"/>
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect Color="#000000" Direction="270" ShadowDepth="1" Opacity="0.2" BlurRadius="4"/>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Glass Panel for content sections -->
+    <Style x:Key="GlassPanel" TargetType="Border">
+        <Setter Property="Background" Value="#10FFFFFF"/>
+        <Setter Property="BorderBrush" Value="{StaticResource GlassBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="10"/>
+    </Style>
+
+    <!-- Status Panel -->
+    <Style x:Key="StatusPanel" TargetType="Border">
+        <Setter Property="Background" Value="#15FFFFFF"/>
+        <Setter Property="BorderBrush" Value="{StaticResource GlassBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="CornerRadius" Value="0,0,8,8"/>
+        <Setter Property="Padding" Value="10,6"/>
+    </Style>
+</ResourceDictionary> 
