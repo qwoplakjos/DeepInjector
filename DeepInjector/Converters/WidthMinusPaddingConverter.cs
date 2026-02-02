@@ -10,7 +10,6 @@ namespace DeepInjector
         {
             if (value is double width)
             {
-                // Subtract padding from width (adjust value as needed based on your padding)
                 return Math.Max(0, width - 30);
             }
             

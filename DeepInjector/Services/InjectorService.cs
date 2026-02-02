@@ -28,7 +28,6 @@ namespace DeepInjector.Services
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hObject);
 
-        // Constants
         private const int PROCESS_CREATE_THREAD = 0x0002;
         private const int PROCESS_QUERY_INFORMATION = 0x0400;
         private const int PROCESS_VM_OPERATION = 0x0008;
@@ -42,7 +41,6 @@ namespace DeepInjector.Services
         {
             try
             {
-                // Get handle to the process
                 IntPtr processHandle = OpenProcess(
                     PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ,
                     false, processId);
@@ -52,24 +50,22 @@ namespace DeepInjector.Services
 
                 try
                 {
-                    // Get address of LoadLibraryA function
+
                     IntPtr loadLibraryAddr = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryW");
 
                     if (loadLibraryAddr == IntPtr.Zero)
-                        return "Failed to get LoadLibraryA address.";
+                        return "Failed to get LoadLibraryW address.";
 
-                    // Allocate memory in the target process
                     byte[] dllPathBytes = Encoding.Unicode.GetBytes(dllPath + "\0");
                     IntPtr allocMemAddress = VirtualAllocEx(processHandle, IntPtr.Zero, (uint)dllPathBytes.Length, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
                     if (allocMemAddress == IntPtr.Zero)
                         return "Failed to allocate memory in the target process.";
 
-                    // Write the DLL path to the allocated memory
                     UIntPtr bytesWritten;
                     if (!WriteProcessMemory(processHandle, allocMemAddress, dllPathBytes, (uint)dllPathBytes.Length, out bytesWritten))
                         return "Failed to write to process memory.";
 
-                    // Create a remote thread that calls LoadLibraryA with allocMemAddress as parameter
+
                     IntPtr threadHandle = CreateRemoteThread(processHandle, IntPtr.Zero, 0, loadLibraryAddr, allocMemAddress, 0, IntPtr.Zero);
                     if (threadHandle == IntPtr.Zero)
                         return "Failed to create remote thread.";
@@ -99,10 +95,9 @@ namespace DeepInjector.Services
                 processNames[i] = processes[i].ProcessName;
             }
 
-            Array.Sort(processes, (a, b) =>
-    string.Compare(a.ProcessName, b.ProcessName, StringComparison.OrdinalIgnoreCase)
-);
+            Array.Sort(processes, (a, b) => 
+            string.Compare(a.ProcessName, b.ProcessName, StringComparison.OrdinalIgnoreCase));
             return processes;
         }
     }
-} 
+}
