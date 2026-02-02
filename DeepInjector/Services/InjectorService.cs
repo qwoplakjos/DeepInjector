@@ -89,12 +89,6 @@ namespace DeepInjector.Services
         public Process[] GetRunningProcesses()
         {
             Process[] processes = Process.GetProcesses();
-            string[] processNames = new string[processes.Length];
-
-            for (int i = 0; i < processes.Length; i++)
-            {
-                processNames[i] = processes[i].ProcessName;
-            }
 
             Array.Sort(processes, (a, b) =>
                 string.Compare(a.ProcessName, b.ProcessName, StringComparison.OrdinalIgnoreCase));
