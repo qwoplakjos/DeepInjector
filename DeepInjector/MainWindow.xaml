@@ -224,6 +224,8 @@
                               IsTabStop="True"
                               Focusable="True"
                               TextBoxBase.TextChanged="ProcessComboBox_TextChanged"
+                              ItemTemplate="{StaticResource ProcessItemTemplate}"
+                              TextSearch.TextPath="Name"
                               IsDropDownOpen="{Binding IsComboBoxOpen, Mode=TwoWay}"
                               IsHitTestVisible="True"
                               Cursor="Hand"/>

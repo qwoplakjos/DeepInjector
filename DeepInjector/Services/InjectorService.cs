@@ -38,20 +38,14 @@ namespace DeepInjector.Services
         private const uint MEM_RESERVE = 0x00002000;
         private const uint PAGE_READWRITE = 0x04;
 
-        public string InjectDll(string processName, string dllPath)
+        public string InjectDll(int processId, string dllPath)
         {
             try
             {
-                Process[] processes = Process.GetProcessesByName(processName);
-                if (processes.Length == 0)
-                    return $"Process '{processName}' not found.";
-
-                Process targetProcess = processes[0];
-                
                 // Get handle to the process
                 IntPtr processHandle = OpenProcess(
                     PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ,
-                    false, targetProcess.Id);
+                    false, processId);
 
                 if (processHandle == IntPtr.Zero)
                     return "Failed to open process.";
@@ -59,13 +53,14 @@ namespace DeepInjector.Services
                 try
                 {
                     // Get address of LoadLibraryA function
-                    IntPtr loadLibraryAddr = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+                    IntPtr loadLibraryAddr = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryW");
+
                     if (loadLibraryAddr == IntPtr.Zero)
                         return "Failed to get LoadLibraryA address.";
 
                     // Allocate memory in the target process
-                    byte[] dllPathBytes = Encoding.ASCII.GetBytes(dllPath);
-                    IntPtr allocMemAddress = VirtualAllocEx(processHandle, IntPtr.Zero, (uint)dllPathBytes.Length + 1, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+                    byte[] dllPathBytes = Encoding.Unicode.GetBytes(dllPath + "\0");
+                    IntPtr allocMemAddress = VirtualAllocEx(processHandle, IntPtr.Zero, (uint)dllPathBytes.Length, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
                     if (allocMemAddress == IntPtr.Zero)
                         return "Failed to allocate memory in the target process.";
 
@@ -94,7 +89,7 @@ namespace DeepInjector.Services
             }
         }
 
-        public string[] GetRunningProcesses()
+        public Process[] GetRunningProcesses()
         {
             Process[] processes = Process.GetProcesses();
             string[] processNames = new string[processes.Length];
@@ -104,8 +99,10 @@ namespace DeepInjector.Services
                 processNames[i] = processes[i].ProcessName;
             }
 
-            Array.Sort(processNames);
-            return processNames;
+            Array.Sort(processes, (a, b) =>
+    string.Compare(a.ProcessName, b.ProcessName, StringComparison.OrdinalIgnoreCase)
+);
+            return processes;
         }
     }
 } 

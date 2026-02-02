@@ -6,11 +6,13 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace DeepInjector
 {
@@ -36,6 +38,9 @@ namespace DeepInjector
 
 
         bool shouldUpdate = false;
+        volatile bool writingText = false;
+
+        int textWritingCounter = 20;
 
         public MainWindow()
         {
@@ -71,14 +76,12 @@ namespace DeepInjector
 
             _processRefreshTimer.Tick += (s, e) =>
             {
-                if (shouldUpdate)
+                if (shouldUpdate && !writingText)
                     RefreshProcessList();
             };
 
             _processRefreshTimer.Start();
             _foregroundTimer.Start();
-
-
         }
 
         private bool IsWindowInForeground()
@@ -105,25 +108,11 @@ namespace DeepInjector
             Close();
         }
 
-        private void ToggleMaximizeWindow()
-        {
-            if (WindowState == WindowState.Maximized)
-            {
-                WindowState = WindowState.Normal;
-            }
-            else
-            {
-                WindowState = WindowState.Maximized;
-            }
-        }
-
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             RefreshProcessList();
             UpdateUIState();
         }
-
-
 
         private void UpdateUIState()
         {
@@ -156,7 +145,6 @@ namespace DeepInjector
                 string filePath = openFileDialog.FileName;
                 string fileName = Path.GetFileNameWithoutExtension(filePath);
 
-                // Check if the DLL is already in the list
                 if (_dllEntries.Any(d => d.FilePath.Equals(filePath, StringComparison.OrdinalIgnoreCase)))
                 {
                     MessageBox.Show("This DLL is already in your list.", "Duplicate DLL", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -167,11 +155,8 @@ namespace DeepInjector
                 _dllEntries.Add(newEntry);
 
                 SaveSettings();
-
-                // Select the newly added DLL
                 DllListBox.SelectedItem = newEntry;
-
-                StatusTextBlock.Text = $"Added DLL: {fileName}";
+                SetStatusTextAndResetAsync($"Added DLL: {fileName}", Color.FromRgb(255, 255, 255));
             }
         }
 
@@ -184,8 +169,7 @@ namespace DeepInjector
                 _dllEntries.Remove(selectedDll);
                 SaveSettings();
                 UpdateUIState();
-
-                StatusTextBlock.Text = $"Removed DLL: {selectedDll.Name}";
+                SetStatusTextAndResetAsync($"Removed DLL: {selectedDll.Name}", Color.FromRgb(255, 255, 255));
             }
         }
 
@@ -194,74 +178,112 @@ namespace DeepInjector
             UpdateUIState();
         }
 
-        private void RefreshButton_Click(object sender, RoutedEventArgs e)
+        private async void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
             RefreshProcessList();
             StatusTextBlock.Text = "Process list refreshed";
+            StatusTextBlock.Foreground = new SolidColorBrush(Color.FromRgb(50, 255, 50));
+            await Task.Delay(1500);
+            StatusTextBlock.Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255));
         }
 
-        private void ProcessComboBox_FocusableChanged(object sender, DependencyPropertyChangedEventArgs e)
-        {
-            // Enable dropdown clicking when the user clicks anywhere on the ComboBox
-            if (sender is ComboBox comboBox)
-            {
-                if (comboBox.IsEditable && comboBox.Template != null)
-                {
-                    comboBox.IsDropDownOpen = true;
-                }
-            }
-        }
 
         private void ProcessComboBox_TextChanged(object sender, TextChangedEventArgs e)
         {
+            textWritingCounter = 20;
+
+
+            if (!writingText)
+            {
+                writingText = true;
+
+                Task.Run(async () =>
+                {
+                    for (; textWritingCounter > 0; textWritingCounter -= 1)
+                    {
+                        await Task.Delay(100);
+                    }
+
+                    writingText = false;
+                });
+            }
+
             UpdateUIState();
         }
 
         private void InjectButton_Click(object sender, RoutedEventArgs e)
         {
             var selectedDll = DllListBox.SelectedItem as DllEntry;
-            string processName = ProcessComboBox.Text;
+            var process = ProcessComboBox.SelectedItem as ProcessItem;
 
-            if (selectedDll != null && !string.IsNullOrWhiteSpace(processName))
+            if (process == null && !string.IsNullOrEmpty(ProcessComboBox.Text))
             {
-                try
+                process = FindProcessByName(ProcessComboBox.Text);
+
+                if (process == null)
                 {
-                    if (!File.Exists(selectedDll.FilePath))
-                    {
-                        System.Media.SystemSounds.Asterisk.Play();
-                        StatusTextBlock.Text = "DLL doesn't exist anymore!";
-                        StatusTextBlock.Foreground = new SolidColorBrush(Color.FromRgb(255, 50, 50));
-                        return;
-                    }
-
-                    _fileAccessService.SetAccessControl(selectedDll.FilePath);
-
-                    selectedDll.LastUsed = DateTime.Now;
-
-                    _settings.LastTargetProcess = processName;
-                    SaveSettings();
-
-                    string result = _injectorService.InjectDll(processName, selectedDll.FilePath);
-
-                    StatusTextBlock.Text = result;
-
-                    if (!result.Contains("successfully"))
-                    {
-                        System.Media.SystemSounds.Asterisk.Play();
-                        StatusTextBlock.Foreground = new SolidColorBrush(Color.FromRgb(255, 50, 50));
-                        MessageBox.Show(result, "Injection Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-                    }
-                    else
-                    {
-                        StatusTextBlock.Foreground = new SolidColorBrush(Color.FromRgb(50, 255, 50));
-                    }
+                    RefreshProcessList();
+                    process = FindProcessByName(ProcessComboBox.Text);
                 }
-                catch (Exception ex)
+
+                if (process == null)
                 {
-                    StatusTextBlock.Text = "Error during injection";
-                    MessageBox.Show($"An error occurred: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    SetStatusTextAndResetAsync("Process not found", Color.FromRgb(255, 50, 50));
+                    return;
                 }
+
+                ProcessComboBox.SelectedItem = process;
+                Console.WriteLine("Process found and selected from text input.");
             }
+
+            if (process == null || selectedDll == null || string.IsNullOrWhiteSpace(process.Name) || process.Pid <= 0)
+                return;
+
+            try
+            {
+                if (!File.Exists(selectedDll.FilePath))
+                {
+                    System.Media.SystemSounds.Asterisk.Play();
+                    StatusTextBlock.Text = "DLL doesn't exist anymore!";
+                    StatusTextBlock.Foreground = new SolidColorBrush(Color.FromRgb(255, 50, 50));
+                    return;
+                }
+
+                _fileAccessService.SetAccessControl(selectedDll.FilePath);
+
+                selectedDll.LastUsed = DateTime.Now;
+                _settings.LastTargetProcess = process.Name;
+                SaveSettings();
+
+                string result = _injectorService.InjectDll(process.Pid, selectedDll.FilePath);
+
+                Color resultColor;
+
+                if (!result.Contains("successfully"))
+                {
+                    System.Media.SystemSounds.Asterisk.Play();
+                    resultColor = Color.FromRgb(255, 50, 50);
+                    MessageBox.Show(result, "Injection Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                else
+                {
+                    resultColor = Color.FromRgb(50, 255, 50);
+                }
+
+                SetStatusTextAndResetAsync(result, resultColor);
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = "Error during injection";
+                MessageBox.Show($"An error occurred: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private ProcessItem FindProcessByName(string name)
+        {
+            return ProcessComboBox.Items
+                .OfType<ProcessItem>()
+                .FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
         }
 
         private void SaveSettings()
@@ -369,17 +391,36 @@ namespace DeepInjector
 
         private void RefreshProcessList()
         {
-            string currentSelection = ProcessComboBox.Text;
-            ProcessComboBox.Items.Clear();
-            foreach (var process in _injectorService.GetRunningProcesses())
-            {
-                ProcessComboBox.Items.Add(process);
-            }
-            if (!string.IsNullOrEmpty(currentSelection))
-            {
-                ProcessComboBox.Text = currentSelection;
-            }
+            string currentText = ProcessComboBox.Text;
+
+            var processes = _injectorService.GetRunningProcesses()
+                .Select(p => new ProcessItem
+                {
+                    Name = p.ProcessName,
+                    Pid = p.Id
+                })
+                .OrderBy(p => p.Name)
+                .ToList();
+
+            ProcessComboBox.ItemsSource = processes;
+
+            ProcessComboBox.Text = currentText;
         }
 
+
+        private async void SetStatusTextAndResetAsync(string text, Color color, int delayMs = 1500)
+        {
+            StatusTextBlock.Text = text;
+            StatusTextBlock.Foreground = new SolidColorBrush(color);
+            await Task.Delay(delayMs);
+            StatusTextBlock.Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255));
+            StatusTextBlock.Text = "Ready";
+        }
+    }
+
+    public class ProcessItem
+    {
+        public string Name { get; set; }
+        public int Pid { get; set; }
     }
 }
