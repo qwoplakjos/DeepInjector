@@ -144,19 +144,23 @@
                             Margin="0,0,0,12"
                             Background="#10FFFFFF">
                         <ListBox x:Name="DllListBox" 
-                                 Style="{StaticResource GlassListBox}"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 SelectionMode="Single"
-                                 SelectionChanged="DllListBox_SelectionChanged"
-                                 ItemContainerStyle="{StaticResource GlassListBoxItem}"
-                                 ItemTemplate="{StaticResource DllItemTemplate}"
-                                 Padding="4"
-                                 AllowDrop="True"
-                                 Drop="DllListBox_Drop"
-                                 DragOver="DllListBox_DragOver"
-                                 DragEnter="DllListBox_DragEnter"
-                                 DragLeave="DllListBox_DragLeave"/>
+         Style="{StaticResource GlassListBox}"
+         BorderThickness="0"
+         Background="Transparent"
+         SelectionMode="Single"
+         SelectionChanged="DllListBox_SelectionChanged"
+         ItemContainerStyle="{StaticResource GlassListBoxItem}"
+         ItemTemplate="{StaticResource DllItemTemplate}"
+         Padding="4"
+         AllowDrop="True"
+         Drop="DllListBox_Drop"
+         DragOver="DllListBox_DragOver"
+         DragEnter="DllListBox_DragEnter"
+         DragLeave="DllListBox_DragLeave"
+         ScrollViewer.CanContentScroll="False"
+         ScrollViewer.VerticalScrollBarVisibility="Auto"
+         ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+
                     </Border>
 
                     <Grid Grid.Row="2">
