@@ -3,6 +3,7 @@ using DeepInjector.Services;
 using Microsoft.Win32;
 using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -219,24 +220,42 @@ namespace DeepInjector
             if (process == null && !string.IsNullOrEmpty(ProcessComboBox.Text))
             {
                 process = FindProcessByName(ProcessComboBox.Text);
-
-                if (process == null)
-                {
-                    RefreshProcessList();
-                    process = FindProcessByName(ProcessComboBox.Text);
-                }
-
-                if (process == null)
-                {
-                    SetStatusTextAndResetAsync("Process not found", Color.FromRgb(255, 50, 50));
-                    return;
-                }
-
-                ProcessComboBox.SelectedItem = process;
-                Console.WriteLine("Process found and selected from text input.");
             }
 
-            if (process == null || selectedDll == null || string.IsNullOrWhiteSpace(process.Name) || process.Pid <= 0)
+            if (process != null)
+            {
+                try
+                {
+                    var currentProcess = Process.GetProcessById(process.Pid);
+                    if (!currentProcess.ProcessName.Equals(process.Name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine($"PID {process.Pid} is now a different process. Refreshing...");
+                        RefreshProcessList();
+                        process = FindProcessByName(process.Name);
+                    }
+                }
+                catch (ArgumentException)
+                {
+                    RefreshProcessList();
+                    process = FindProcessByName(process.Name);
+                }
+            }
+
+            if (process == null && !string.IsNullOrEmpty(ProcessComboBox.Text))
+            {
+                RefreshProcessList();
+                process = FindProcessByName(ProcessComboBox.Text);
+            }
+
+            if (process == null)
+            {
+                SetStatusTextAndResetAsync("Process not found", Color.FromRgb(255, 50, 50));
+                return;
+            }
+
+            ProcessComboBox.SelectedItem = process;
+
+            if (selectedDll == null || string.IsNullOrWhiteSpace(process.Name) || process.Pid <= 0)
                 return;
 
             try
@@ -250,13 +269,11 @@ namespace DeepInjector
                 }
 
                 _fileAccessService.SetAccessControl(selectedDll.FilePath);
-
                 selectedDll.LastUsed = DateTime.Now;
                 _settings.LastTargetProcess = process.Name;
                 SaveSettings();
 
                 string result = _injectorService.InjectDll(process.Pid, selectedDll.FilePath);
-
                 Color resultColor;
 
                 if (!result.Contains("successfully"))
