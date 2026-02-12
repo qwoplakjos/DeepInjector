@@ -2,6 +2,7 @@
 using DeepInjector.Services;
 using Microsoft.Win32;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
@@ -14,6 +15,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using static System.Net.Mime.MediaTypeNames;
+using System.Management;
+using DeepInjector.Services.DeepInjector;
 
 namespace DeepInjector
 {
@@ -32,16 +35,12 @@ namespace DeepInjector
         private FileAccessService _fileAccessService;
         private InjectorSettings _settings;
         private ObservableCollection<DllEntry> _dllEntries;
+        private WmiProcessWatcher _wmiProcessWatcher;
+        private ObservableCollection<ProcessItem> _processes;
 
-
-        private DispatcherTimer _processRefreshTimer;
-        private DispatcherTimer _foregroundTimer;
-
-
-        bool shouldUpdate = false;
-        volatile bool writingText = false;
-
-        int textWritingCounter = 20;
+        private volatile bool _isRefreshing = false;
+        private volatile bool _writingText = false;
+        private int _textWritingCounter = 20;
 
         public MainWindow()
         {
@@ -51,48 +50,73 @@ namespace DeepInjector
             _fileAccessService = new FileAccessService();
             _settings = InjectorSettings.Load();
             _dllEntries = new ObservableCollection<DllEntry>(_settings.DllEntries);
+            _processes = new ObservableCollection<ProcessItem>();
 
             DllListBox.ItemsSource = _dllEntries;
+            ProcessComboBox.ItemsSource = _processes;
 
             if (!string.IsNullOrEmpty(_settings.LastTargetProcess))
             {
                 ProcessComboBox.Text = _settings.LastTargetProcess;
             }
 
-
-            _processRefreshTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(10)
-            };
-
-            _foregroundTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(2)
-            };
-
-            _foregroundTimer.Tick += (s, e) =>
-            {
-                shouldUpdate = IsWindowInForeground();
-            };
-
-            _processRefreshTimer.Tick += (s, e) =>
-            {
-                if (shouldUpdate && !writingText)
-                    RefreshProcessList();
-            };
-
-            _processRefreshTimer.Start();
-            _foregroundTimer.Start();
+            _wmiProcessWatcher = new WmiProcessWatcher();
+            SetupProcessWatcher();
         }
 
-        private bool IsWindowInForeground()
+        private void SetupProcessWatcher()
         {
-            IntPtr hwnd = GetForegroundWindow();
-            uint processId;
-            GetWindowThreadProcessId(hwnd, out processId);
-            return processId == (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+            _wmiProcessWatcher.ProcessStarted += (pid, name) =>
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    OnProcessStarted(pid, name);
+                }));
+            };
+
+            _wmiProcessWatcher.ProcessStopped += (pid) =>
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    OnProcessStopped(pid);
+                }));
+            };
         }
 
+        private void OnProcessStarted(int pid, string name)
+        {
+            if (pid <= 0)
+                return;
+
+            var existingProcess = _processes.FirstOrDefault(p => p.Pid == pid);
+            if (existingProcess != null)
+                return;
+
+            var newProcess = new ProcessItem { Name = name, Pid = pid };
+
+            int insertIndex = _processes.Count;
+            for (int i = 0; i < _processes.Count; i++)
+            {
+                if (string.Compare(_processes[i].Name, name, StringComparison.OrdinalIgnoreCase) > 0)
+                {
+                    insertIndex = i;
+                    break;
+                }
+            }
+
+            _processes.Insert(insertIndex, newProcess);
+        }
+
+        private void OnProcessStopped(int pid)
+        {
+            string currentText = ProcessComboBox.Text;
+            var process = _processes.FirstOrDefault(p => p.Pid == pid);
+            if (process != null)
+            {
+                _processes.Remove(process);
+            }
+            ProcessComboBox.Text = currentText;
+        }
 
         private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
@@ -111,8 +135,27 @@ namespace DeepInjector
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            RefreshProcessList();
+            InitialLoadProcessList();
             UpdateUIState();
+
+            try
+            {
+                _wmiProcessWatcher.Start();
+            }
+            catch
+            {
+                MessageBox.Show(
+                    "Failed to start process monitoring. The application will work but won't auto-update the process list.",
+                    "Warning",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            _wmiProcessWatcher?.Dispose();
+            base.OnClosed(e);
         }
 
         private void UpdateUIState()
@@ -188,24 +231,22 @@ namespace DeepInjector
             StatusTextBlock.Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255));
         }
 
-
         private void ProcessComboBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            textWritingCounter = 20;
+            _textWritingCounter = 20;
 
-
-            if (!writingText)
+            if (!_writingText)
             {
-                writingText = true;
+                _writingText = true;
 
                 Task.Run(async () =>
                 {
-                    for (; textWritingCounter > 0; textWritingCounter -= 1)
+                    for (; _textWritingCounter > 0; _textWritingCounter -= 1)
                     {
                         await Task.Delay(100);
                     }
 
-                    writingText = false;
+                    _writingText = false;
                 });
             }
 
@@ -298,9 +339,7 @@ namespace DeepInjector
 
         private ProcessItem FindProcessByName(string name)
         {
-            return ProcessComboBox.Items
-                .OfType<ProcessItem>()
-                .FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            return _processes.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
         }
 
         private void SaveSettings()
@@ -311,13 +350,11 @@ namespace DeepInjector
 
         private void DllListBox_DragEnter(object sender, DragEventArgs e)
         {
-
             if (e.Data.GetDataPresent(DataFormats.FileDrop))
             {
                 var files = (string[])e.Data.GetData(DataFormats.FileDrop);
                 if (files != null && files.Any(f => Path.GetExtension(f).Equals(".dll", StringComparison.OrdinalIgnoreCase)))
                 {
-
                     e.Effects = DragDropEffects.Copy;
 
                     if (DllListBoxBorder != null)
@@ -405,25 +442,104 @@ namespace DeepInjector
             e.Handled = true;
         }
 
-
-        private void RefreshProcessList()
+        private void InitialLoadProcessList()
         {
             string currentText = ProcessComboBox.Text;
 
-            var processes = _injectorService.GetRunningProcesses()
+            var processList = ProcessService.GetProcessesFast()
+                .Where(p => p.pid > 0)
                 .Select(p => new ProcessItem
                 {
-                    Name = p.ProcessName,
-                    Pid = p.Id
+                    Name = p.name,
+                    Pid = p.pid,
                 })
                 .OrderBy(p => p.Name)
                 .ToList();
 
-            ProcessComboBox.ItemsSource = processes;
+            _processes.Clear();
+            foreach (var process in processList)
+            {
+                _processes.Add(process);
+            }
 
-            ProcessComboBox.Text = currentText;
+            if (!string.IsNullOrEmpty(currentText))
+            {
+                ProcessComboBox.Text = currentText;
+            }
         }
 
+
+        private void RefreshProcessList()
+        {
+            if (_isRefreshing)
+                return;
+
+            _isRefreshing = true;
+            Console.WriteLine("Refreshing process list...");
+            try
+            {
+                string currentText = ProcessComboBox.Text;
+                ProcessItem currentSelection = ProcessComboBox.SelectedItem as ProcessItem;
+
+                var currentProcesses = ProcessService.GetProcessesFast()
+                    .Where(p => p.pid > 0)
+                    .Select(p => new ProcessItem { Name = p.name, Pid = p.pid })
+                    .ToList();
+
+                var currentPids = new HashSet<int>(currentProcesses.Select(p => p.Pid));
+                var existingPids = new HashSet<int>(_processes.Select(p => p.Pid));
+
+                for (int i = _processes.Count - 1; i >= 0; i--)
+                {
+                    if (!currentPids.Contains(_processes[i].Pid))
+                    {
+                        _processes.RemoveAt(i);
+                    }
+                }
+
+                foreach (var process in currentProcesses)
+                {
+                    if (!existingPids.Contains(process.Pid))
+                    {
+                        int insertIndex = _processes.Count;
+                        for (int i = 0; i < _processes.Count; i++)
+                        {
+                            if (string.Compare(_processes[i].Name, process.Name, StringComparison.OrdinalIgnoreCase) > 0)
+                            {
+                                insertIndex = i;
+                                break;
+                            }
+                        }
+                        _processes.Insert(insertIndex, process);
+                    }
+                }
+
+                if (currentSelection != null)
+                {
+                    var matchingProcess = _processes.FirstOrDefault(p =>
+                        p.Pid == currentSelection.Pid ||
+                        p.Name.Equals(currentSelection.Name, StringComparison.OrdinalIgnoreCase));
+
+                    if (matchingProcess != null)
+                    {
+                        ProcessComboBox.SelectedItem = matchingProcess;
+                    }
+                    else
+                    {
+                        ProcessComboBox.Text = currentText;
+                    }
+                }
+                else if (!string.IsNullOrEmpty(currentText))
+                {
+                    ProcessComboBox.Text = currentText;
+                   
+                }
+            }
+            finally
+            {
+                _isRefreshing = false;
+            }
+        }
 
         private async void SetStatusTextAndResetAsync(string text, Color color, int delayMs = 1500)
         {

@@ -75,6 +75,7 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Management" />
     <Reference Include="System.Xaml" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
@@ -97,6 +98,8 @@
     <Compile Include="Models\InjectorSettings.cs" />
     <Compile Include="Services\FileAccessService.cs" />
     <Compile Include="Services\InjectorService.cs" />
+    <Compile Include="Services\ProcessService.cs" />
+    <Compile Include="Services\WMIProcessWatcher.cs" />
     <Compile Include="SimpleJSON.cs" />
     <Page Include="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
